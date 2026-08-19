@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { isSupabaseConfigured, supabaseUrlDiagnostica } from '../lib/supabase'
 
 export function LoginPage() {
   const { signIn, session } = useAuth()
@@ -34,6 +34,9 @@ export function LoginPage() {
         {!isSupabaseConfigured && (
           <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
             Supabase non è ancora configurato. Vedi il file README.md per completare l'installazione.
+            <p className="mt-2 break-all font-mono text-xs">
+              VITE_SUPABASE_URL letta dalla build: {supabaseUrlDiagnostica}
+            </p>
           </div>
         )}
 

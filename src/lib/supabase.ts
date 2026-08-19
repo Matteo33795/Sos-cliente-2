@@ -5,6 +5,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
+// Diagnostica mostrata nella pagina di login quando non configurato, per
+// capire dal telefono/browser cosa e' stato effettivamente incluso nella
+// build senza dover aprire la console degli sviluppatori.
+export const supabaseUrlDiagnostica = supabaseUrl ? supabaseUrl : '(vuota/non impostata)'
+
 if (!isSupabaseConfigured) {
   console.warn(
     'Supabase non configurato: imposta VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nel file .env (vedi .env.example e README.md).',
