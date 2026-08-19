@@ -14,7 +14,11 @@ if (!isSupabaseConfigured) {
 // Il client non e' tipizzato con lo schema Database: le query usano cast
 // mirati (vedi le interfacce in database.types.ts) per mantenere il codice
 // semplice ed evitare i vincoli molto rigidi della generics di supabase-js.
+// || invece di ?? apposta: una variabile d'ambiente lasciata vuota (stringa
+// '') su Vercel non viene intercettata da ??, e createClient('') va in
+// crash con "supabaseUrl is required", lasciando una pagina bianca senza
+// nessun indizio visibile per chi non apre la console del browser.
 export const supabase = createClient(
-  supabaseUrl ?? 'https://placeholder.supabase.co',
-  supabaseAnonKey ?? 'placeholder-anon-key',
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key',
 )
