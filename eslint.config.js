@@ -12,9 +12,16 @@ const browserGlobals = {
   alert: 'readonly',
   confirm: 'readonly',
   fetch: 'readonly',
+  atob: 'readonly',
+  Notification: 'readonly',
+  BufferSource: 'readonly',
   HTMLVideoElement: 'readonly',
   HTMLElement: 'readonly',
   URL: 'readonly',
+}
+
+const serviceWorkerGlobals = {
+  self: 'readonly',
 }
 
 const nodeGlobals = {
@@ -27,7 +34,12 @@ const nodeGlobals = {
 }
 
 export default [
-  { ignores: ['dist', 'node_modules'] },
+  {
+    // Le Edge Function girano su Deno, un runtime a parte con globali e
+    // convenzioni proprie (import "npm:..."): non ha senso lintarle con le
+    // stesse regole del resto del progetto.
+    ignores: ['dist', 'node_modules', 'supabase/functions/**'],
+  },
   js.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
@@ -54,6 +66,14 @@ export default [
       ecmaVersion: 2020,
       sourceType: 'commonjs',
       globals: nodeGlobals,
+    },
+  },
+  {
+    files: ['public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: 'script',
+      globals: { ...browserGlobals, ...serviceWorkerGlobals },
     },
   },
 ]

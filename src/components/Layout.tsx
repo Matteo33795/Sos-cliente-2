@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { NotificationBell } from './NotificationBell'
 
 const navItems = [
   { to: '/', label: 'Materiali', icon: '📦' },
@@ -18,12 +19,15 @@ export function Layout() {
           <h1 className="text-base font-semibold text-slate-900">Stoccaggio</h1>
           <p className="truncate text-xs text-slate-500">{user?.email}</p>
         </div>
-        <button
-          onClick={() => signOut()}
-          className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-        >
-          Esci
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <button
+            onClick={() => signOut()}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          >
+            Esci
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-20">

@@ -2,6 +2,7 @@
 -- Esegui questo file nell'SQL Editor del tuo progetto Supabase (supabase.com)
 
 create extension if not exists "pgcrypto";
+create extension if not exists "pg_net";
 
 -- ============================================================
 -- PROFILI UTENTE
@@ -14,11 +15,13 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "I profili sono visibili a tutti gli utenti autenticati" on public.profiles;
 create policy "I profili sono visibili a tutti gli utenti autenticati"
   on public.profiles for select
   to authenticated
   using (true);
 
+drop policy if exists "Un utente puo' modificare solo il proprio profilo" on public.profiles;
 create policy "Un utente puo' modificare solo il proprio profilo"
   on public.profiles for update
   to authenticated
@@ -54,21 +57,25 @@ create table if not exists public.ubicazioni (
 
 alter table public.ubicazioni enable row level security;
 
+drop policy if exists "Ubicazioni visibili agli utenti autenticati" on public.ubicazioni;
 create policy "Ubicazioni visibili agli utenti autenticati"
   on public.ubicazioni for select
   to authenticated
   using (true);
 
+drop policy if exists "Utenti autenticati possono creare ubicazioni" on public.ubicazioni;
 create policy "Utenti autenticati possono creare ubicazioni"
   on public.ubicazioni for insert
   to authenticated
   with check (true);
 
+drop policy if exists "Utenti autenticati possono modificare ubicazioni" on public.ubicazioni;
 create policy "Utenti autenticati possono modificare ubicazioni"
   on public.ubicazioni for update
   to authenticated
   using (true);
 
+drop policy if exists "Utenti autenticati possono eliminare ubicazioni" on public.ubicazioni;
 create policy "Utenti autenticati possono eliminare ubicazioni"
   on public.ubicazioni for delete
   to authenticated
@@ -90,23 +97,31 @@ create table if not exists public.materiali (
   created_at timestamptz not null default now()
 );
 
+-- Evita di rimandare piu' notifiche di seguito per lo stesso calo di scorta:
+-- si azzera automaticamente appena la quantita' torna sopra la soglia.
+alter table public.materiali add column if not exists sotto_scorta_notificato boolean not null default false;
+
 alter table public.materiali enable row level security;
 
+drop policy if exists "Materiali visibili agli utenti autenticati" on public.materiali;
 create policy "Materiali visibili agli utenti autenticati"
   on public.materiali for select
   to authenticated
   using (true);
 
+drop policy if exists "Utenti autenticati possono creare materiali" on public.materiali;
 create policy "Utenti autenticati possono creare materiali"
   on public.materiali for insert
   to authenticated
   with check (true);
 
+drop policy if exists "Utenti autenticati possono modificare materiali" on public.materiali;
 create policy "Utenti autenticati possono modificare materiali"
   on public.materiali for update
   to authenticated
   using (true);
 
+drop policy if exists "Utenti autenticati possono eliminare materiali" on public.materiali;
 create policy "Utenti autenticati possono eliminare materiali"
   on public.materiali for delete
   to authenticated
@@ -127,6 +142,7 @@ create table if not exists public.giacenze (
 
 alter table public.giacenze enable row level security;
 
+drop policy if exists "Giacenze visibili agli utenti autenticati" on public.giacenze;
 create policy "Giacenze visibili agli utenti autenticati"
   on public.giacenze for select
   to authenticated
@@ -134,6 +150,58 @@ create policy "Giacenze visibili agli utenti autenticati"
 
 -- Nessuna policy di insert/update/delete per gli utenti: le giacenze
 -- vengono scritte solo dalla funzione security definer applica_movimento().
+
+-- ============================================================
+-- NOTIFICHE PUSH (iscrizioni dei dispositivi e configurazione)
+-- ============================================================
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "Un utente vede solo le proprie iscrizioni" on public.push_subscriptions;
+create policy "Un utente vede solo le proprie iscrizioni"
+  on public.push_subscriptions for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+drop policy if exists "Un utente puo' iscrivere il proprio dispositivo" on public.push_subscriptions;
+create policy "Un utente puo' iscrivere il proprio dispositivo"
+  on public.push_subscriptions for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Un utente puo' cancellare le proprie iscrizioni" on public.push_subscriptions;
+create policy "Un utente puo' cancellare le proprie iscrizioni"
+  on public.push_subscriptions for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- Riga unica di configurazione con l'indirizzo della Edge Function che
+-- invia le notifiche e un segreto condiviso per autorizzarne la chiamata.
+-- Non e' leggibile dal client (nessuna policy select): va impostata a mano
+-- una volta dall'SQL Editor con una UPDATE, vedi README.md.
+create table if not exists public.app_config (
+  id boolean primary key default true check (id),
+  edge_function_url text,
+  edge_function_secret text,
+  -- Chiave "publishable"/anon del progetto: alcune Edge Function restano
+  -- protette dalla verifica JWT di Supabase anche quando "Verify JWT" non
+  -- si riesce a disattivare dall'editor. Questa chiave viene inviata come
+  -- Authorization/apikey per superare quel controllo.
+  edge_function_anon_key text
+);
+
+insert into public.app_config (id) values (true) on conflict (id) do nothing;
+alter table public.app_config add column if not exists edge_function_anon_key text;
+
+alter table public.app_config enable row level security;
 
 -- ============================================================
 -- MOVIMENTI (carico / scarico, storico)
@@ -161,11 +229,13 @@ alter table public.movimenti
 
 alter table public.movimenti enable row level security;
 
+drop policy if exists "Movimenti visibili agli utenti autenticati" on public.movimenti;
 create policy "Movimenti visibili agli utenti autenticati"
   on public.movimenti for select
   to authenticated
   using (true);
 
+drop policy if exists "Un utente puo' registrare movimenti a proprio nome" on public.movimenti;
 create policy "Un utente puo' registrare movimenti a proprio nome"
   on public.movimenti for insert
   to authenticated
@@ -214,6 +284,72 @@ drop trigger if exists on_movimento_creato on public.movimenti;
 create trigger on_movimento_creato
   before insert on public.movimenti
   for each row execute procedure public.applica_movimento();
+
+-- Dopo che il movimento e' stato applicato (giacenze gia' aggiornate dal
+-- trigger sopra), controlla se il totale e' sceso sotto la soglia minima e,
+-- in tal caso, chiama la Edge Function che invia le notifiche push.
+-- Non fa nulla se public.app_config non e' stata configurata.
+create or replace function public.notifica_se_sotto_scorta()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as '
+declare
+  tot numeric;
+  minima numeric;
+  gia_notificato boolean;
+  nome_materiale text;
+  unita text;
+  url text;
+  segreto text;
+  chiave_anon text;
+begin
+  select coalesce(sum(quantita), 0) into tot
+  from public.giacenze
+  where materiale_id = new.materiale_id;
+
+  select quantita_minima, sotto_scorta_notificato, nome, unita_misura
+  into minima, gia_notificato, nome_materiale, unita
+  from public.materiali
+  where id = new.materiale_id;
+
+  if tot <= minima and not gia_notificato then
+    update public.materiali set sotto_scorta_notificato = true where id = new.materiale_id;
+
+    select edge_function_url, edge_function_secret, edge_function_anon_key
+    into url, segreto, chiave_anon
+    from public.app_config where id = true;
+
+    if url is not null and url <> '''' then
+      perform net.http_post(
+        url := url,
+        body := jsonb_build_object(
+          ''secret'', segreto,
+          ''materiale_id'', new.materiale_id,
+          ''nome'', nome_materiale,
+          ''quantita_totale'', tot,
+          ''quantita_minima'', minima,
+          ''unita_misura'', unita
+        ),
+        headers := jsonb_build_object(
+          ''Content-Type'', ''application/json'',
+          ''apikey'', coalesce(chiave_anon, ''''),
+          ''Authorization'', ''Bearer '' || coalesce(chiave_anon, '''')
+        )
+      );
+    end if;
+  elsif tot > minima and gia_notificato then
+    update public.materiali set sotto_scorta_notificato = false where id = new.materiale_id;
+  end if;
+
+  return new;
+end;
+';
+
+drop trigger if exists on_movimento_verifica_scorta on public.movimenti;
+create trigger on_movimento_verifica_scorta
+  after insert on public.movimenti
+  for each row execute procedure public.notifica_se_sotto_scorta();
 
 -- ============================================================
 -- INDICI utili per ricerca e ordinamento

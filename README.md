@@ -87,6 +87,81 @@ tempo reale.
 L'icona comparirà come una vera app, a schermo intero, senza barra del
 browser.
 
+## 5. (Facoltativo) Notifiche push per scorta bassa
+
+Quando un materiale scende sotto la scorta minima impostata, l'app può
+inviare una notifica push al telefono di chi ha attivato le notifiche
+(icona 🔔/🔕 in alto nell'app), anche ad app chiusa.
+
+⚠️ Su iPhone funziona solo se l'app è installata sulla home screen (non
+aperta da Safari) e con iOS 16.4 o successivo. Su Android funziona sempre.
+
+Questa parte è più tecnica delle precedenti: se non ti serve subito puoi
+saltarla, l'app funziona lo stesso senza.
+
+### 5.1 Genera le chiavi VAPID (una volta sola)
+
+Le notifiche push richiedono una coppia di chiavi "VAPID" che identificano
+la tua installazione. Se hai Node.js installato sul computer:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Otterrai una **Public Key** e una **Private Key**: tienile da parte, ti
+servono nei prossimi due passaggi.
+
+### 5.2 Crea la Edge Function su Supabase
+
+1. Nel progetto Supabase, vai su **Edge Functions** (menu a sinistra) →
+   **Deploy a new function** (o "Create a new function").
+2. Chiamala esattamente `notifica-scorta-bassa`.
+3. Se ti viene chiesto, disattiva **"Verify JWT"** / "Enforce JWT
+   verification" — la funzione si protegge da sola con un codice segreto
+   (vedi sotto), non con il login di Supabase.
+4. Cancella il codice di esempio e incolla al suo posto il contenuto del
+   file [`supabase/functions/notifica-scorta-bassa/index.ts`](./supabase/functions/notifica-scorta-bassa/index.ts)
+   di questo repository (stesso avviso di prima: copialo dal pulsante
+   "Raw" su GitHub, non da un'app che potrebbe alterare il testo).
+5. Clicca **Deploy**.
+6. Nella pagina della funzione, vai su **Secrets** e aggiungi queste
+   quattro variabili:
+   - `VAPID_PUBLIC_KEY` → la Public Key del passaggio 5.1
+   - `VAPID_PRIVATE_KEY` → la Private Key del passaggio 5.1
+   - `VAPID_SUBJECT` → `mailto:` seguito da un tuo indirizzo email di
+     contatto (es. `mailto:nome@esempio.it`)
+   - `FUNCTION_SECRET` → una password a scelta, inventata da te (es. una
+     stringa lunga e casuale); serve a impedire che altri chiamino la
+     funzione dall'esterno
+7. Copia l'**URL della funzione** mostrato in alto nella pagina (tipo
+   `https://xxxxxxxxxxxx.supabase.co/functions/v1/notifica-scorta-bassa`).
+
+### 5.3 Collega database e funzione
+
+Nell'SQL Editor di Supabase, esegui (sostituendo i due valori con l'URL
+del passaggio precedente e lo stesso `FUNCTION_SECRET` che hai scelto):
+
+```sql
+update public.app_config
+set
+  edge_function_url = 'https://xxxxxxxxxxxx.supabase.co/functions/v1/notifica-scorta-bassa',
+  edge_function_secret = 'lo-stesso-valore-di-FUNCTION_SECRET'
+where id = true;
+```
+
+### 5.4 Configura l'app
+
+Aggiungi al tuo `.env` (e, se l'app è già online, anche tra le variabili
+d'ambiente su Vercel) la Public Key del passaggio 5.1:
+
+```
+VITE_VAPID_PUBLIC_KEY=la-tua-public-key
+```
+
+Ricompila/ridistribuisci l'app. Da questo momento chi apre l'app vedrà
+l'icona 🔕 in alto: toccandola e accettando il permesso del browser,
+riceverà una notifica ogni volta che un materiale scende sotto scorta.
+
 ## Funzionalità
 
 - **Anagrafica materiali**: nome, codice/barcode, categoria, unità di
@@ -104,6 +179,8 @@ browser.
   utente e ubicazione.
 - **Materiali sotto scorta minima**: evidenziati in rosso nell'elenco e nel
   dettaglio.
+- **Notifiche push** (facoltative): avviso sul telefono quando un materiale
+  scende sotto la scorta minima, vedi punto 5 sopra.
 
 ## Stack tecnico
 
@@ -115,17 +192,23 @@ browser.
   installabile e utilizzabile offline
 - [@zxing/browser](https://github.com/zxing-js/browser) per la scansione di
   barcode/QR da fotocamera
+- [Web Push API](https://developer.mozilla.org/docs/Web/API/Push_API) +
+  una Supabase Edge Function (Deno) per le notifiche di scorta bassa
 
 ## Struttura del progetto
 
 ```
 src/
-  components/     Layout, route protette, scanner barcode
+  components/     Layout, route protette, scanner barcode, campanella notifiche
   context/        Contesto di autenticazione (Supabase Auth)
-  lib/            Client Supabase e tipi del database
+  lib/            Client Supabase, tipi del database, notifiche push
   pages/          Le pagine dell'app (login, materiali, movimenti, ...)
+public/
+  push-sw.js      Gestione delle notifiche push nel service worker
 supabase/
-  schema.sql      Schema del database da eseguire su Supabase
+  schema.sql              Schema del database da eseguire su Supabase
+  functions/
+    notifica-scorta-bassa/  Edge Function che invia le notifiche push
 ```
 
 ## Comandi utili
